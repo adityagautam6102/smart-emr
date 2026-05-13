@@ -1,0 +1,67 @@
+services:
+  # HAPI FHIR Server
+  hapi-fhir:
+    image: hapiproject/hapi:latest
+    container_name: hapi-fhir-server
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres-db:5432/fhir
+      - SPRING_DATASOURCE_USERNAME=fhiruser
+      - SPRING_DATASOURCE_PASSWORD=fhirpassword
+      - SPRING_DATASOURCE_DRIVER_CLASS_NAME=org.postgresql.Driver
+      - HIBERNATE_DIALECT=ca.uhn.fhir.jpa.model.dialect.HapiFhirPostgresDialect
+      - hapi.fhir.fhir_version=R4
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+    networks:
+      - emr-network
+
+  # PostgreSQL Database for FHIR
+  postgres-db:
+    image: postgres:16-alpine
+    container_name: postgres-db
+    environment:
+      - POSTGRES_DB=fhir
+      - POSTGRES_USER=fhiruser
+      - POSTGRES_PASSWORD=fhirpassword
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fhiruser -d fhir"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - emr-network
+
+  # FastAPI Backend
+  backend:
+    build:
+      context: ../
+      dockerfile: docker/backend.Dockerfile
+    container_name: emr-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - FHIR_BASE_URL=http://hapi-fhir:8080/fhir
+    depends_on:
+      - hapi-fhir
+    networks:
+      - emr-network
+
+  # React Frontend
+  frontend:
+    build:
+      context: ../
+      dockerfile: docker/frontend.Dockerfile
+    container_name: emr-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - emr-network
+
+networks:
+  emr-network:
+    driver: bridge
